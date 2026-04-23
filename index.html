@@ -1,0 +1,205 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Singuang Recording Studio</title>
+    <style>
+        :root { --teal: #00b08b; --coral: #ff7e79; --purple: #7a6fff; --white: #ffffff; }
+        body { font-family: Arial, sans-serif; margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #b0b0b0; overflow: hidden; }
+        .hidden { display: none !important; }
+
+        /* TEACHER SETUP MODAL */
+        #setup-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+        .modal { background: white; padding: 40px; border-radius: 20px; width: 450px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+        input, textarea { width: 100%; margin-top: 10px; padding: 12px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+        .btn-setup { width: 100%; margin-top: 15px; padding: 15px; border: none; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: 0.2s; }
+        .btn-setup:hover { opacity: 0.9; }
+
+        /* STUDENT GALLERY VIEW (Image 3 Reference) */
+        #student-gallery { position: fixed; inset: 0; background: url('hill_background.jpg') center/cover; display: flex; align-items: center; justify-content: center; z-index: 50; }
+        .gallery-content { display: flex; align-items: center; gap: 40px; }
+        .name-box { background: white; padding: 20px 40px; border-radius: 30px; border: 4px solid var(--purple); display: flex; align-items: center; gap: 15px; }
+        .name-box h1 { color: #0066cc; font-size: 3rem; margin: 0; text-transform: lowercase; }
+        .cards-container { display: flex; gap: 15px; }
+        .student-card { background: rgba(255,255,255,0.9); width: 130px; height: 320px; border-radius: 20px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; padding-bottom: 30px; box-shadow: 0 8px 15px rgba(0,0,0,0.1); transition: 0.2s; }
+        .student-card:hover { transform: translateY(-10px); background: white; border: 2px solid var(--teal); }
+
+        /* RECORDER VIEW */
+        .recording-card { background: white; width: 90%; max-width: 700px; aspect-ratio: 16/10; border-radius: 60px; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 40px; box-sizing: border-box; text-align: center; box-shadow: 0 20px 40px rgba(0,0,0,0.2); }
+        .display-text { font-size: 5rem; font-weight: 900; color: var(--coral); margin: 20px 0; }
+        .btn-record { background: var(--teal); color: white; border: none; width: 85%; padding: 22px; border-radius: 50px; font-size: 1.5rem; font-weight: bold; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+
+<div id="setup-modal">
+    <div class="modal">
+        <h2 style="color:var(--teal); margin-top:0;">Singuang Studio Setup</h2>
+        <p style="font-size: 12px; color: #666;">Enter details to create your classroom session.</p>
+        <input type="text" id="setup-drive" placeholder="Paste Google Drive Folder Link">
+        <textarea id="setup-names" rows="3" placeholder="Student Names (Adrian, John, Persa...)"></textarea>
+        <textarea id="setup-items" rows="3" placeholder="Vocabulary/Sentences (school, classroom...)"></textarea>
+        
+        <button onclick="startLocally()" class="btn-setup" style="background:var(--teal); color:white;">Start on THIS Computer</button>
+        <button onclick="generateLink()" class="btn-setup" style="background:var(--purple); color:white;">Generate Link for Student iPads</button>
+    </div>
+</div>
+
+<div id="student-gallery" class="hidden">
+    <div class="gallery-content">
+        <div class="name-box">
+            <h1>name</h1>
+            <img src="pointer_hand.png" width="45" alt="pointer">
+        </div>
+        <div class="cards-container" id="cards-target">
+            </div>
+    </div>
+</div>
+
+<div id="recorder-view" class="recording-card hidden">
+    <div>
+        <p id="ui-name" style="color:#888; font-weight:bold; margin:0; font-size: 1.2rem;"></p>
+        <p id="ui-progress" style="color:var(--purple); font-weight:bold; margin:5px 0;"></p>
+    </div>
+    <h1 id="ui-word" class="display-text">Ready</h1>
+    <div style="width:100%">
+        <button id="rec-btn" class="btn-record" onclick="handleRecord()">Start Recording</button>
+        <p id="ui-instr" style="color:var(--purple); font-weight:bold; margin-top:10px;">Press Start</p>
+    </div>
+</div>
+
+<script>
+    let config = { drive: '', students: [], items: [], currentIdx: 0, student: '' };
+    let mediaRecorder;
+    let audioChunks = [];
+    let isRecording = false;
+    let sessionData = [];
+
+    // 🔴 PASTE YOUR GOOGLE APPS SCRIPT URL BETWEEN THE QUOTES BELOW
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbx0_s77r1WF24Et6OhHvu0EPSpZs98EBaWSx_D1B9IRR_tfNKHJgrRC4xiu9g6QY0patw/exec";
+
+    // AUTO-LOAD FOR IPADS
+    window.onload = function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('config')) {
+            try {
+                const decoded = JSON.parse(decodeURIComponent(atob(urlParams.get('config'))));
+                config.drive = decoded.drive;
+                config.students = decoded.students;
+                config.items = decoded.items;
+                document.getElementById('setup-modal').classList.add('hidden');
+                buildGallery();
+            } catch (e) { console.error("URL Data Error"); }
+        }
+    };
+
+    function startLocally() {
+        config.drive = document.getElementById('setup-drive').value.trim();
+        config.students = document.getElementById('setup-names').value.split(',').map(s => s.trim()).filter(s => s);
+        config.items = document.getElementById('setup-items').value.split(',').map(s => s.trim()).filter(s => s);
+        if(!config.drive || config.students.length === 0) return alert("Please fill in the Drive link and Names!");
+        document.getElementById('setup-modal').classList.add('hidden');
+        buildGallery();
+    }
+
+    function generateLink() {
+        const drive = document.getElementById('setup-drive').value.trim();
+        const names = document.getElementById('setup-names').value.split(',').map(s => s.trim()).filter(s => s);
+        const items = document.getElementById('setup-items').value.split(',').map(s => s.trim()).filter(s => s);
+        if(!drive || names.length === 0) return alert("Fill out the setup first!");
+
+        const dataObj = { drive, students: names, items };
+        const encoded = btoa(encodeURIComponent(JSON.stringify(dataObj)));
+        const finalLink = window.location.href.split('?')[0] + "?config=" + encoded;
+        prompt("COPY THIS LINK FOR THE QR CODE:", finalLink);
+    }
+
+    function buildGallery() {
+        const target = document.getElementById('cards-target');
+        target.innerHTML = '';
+        config.students.forEach((name, i) => {
+            const card = document.createElement('div');
+            card.className = 'student-card';
+            card.onclick = () => selectStudent(name);
+            card.innerHTML = `<p style="color:#ccc; font-size:1.5rem; font-weight:bold; margin-bottom:100px;">${i+1}</p>
+                              <p style="font-weight:bold; font-size:1.1rem;">${name}</p>`;
+            target.appendChild(card);
+        });
+        document.getElementById('student-gallery').classList.remove('hidden');
+    }
+
+    function selectStudent(name) {
+        config.student = name;
+        config.currentIdx = 0;
+        sessionData = [];
+        document.getElementById('ui-name').innerText = name;
+        document.getElementById('student-gallery').classList.add('hidden');
+        document.getElementById('recorder-view').classList.remove('hidden');
+        updateUI();
+    }
+
+    function updateUI() {
+        if(config.currentIdx < config.items.length) {
+            document.getElementById('ui-word').innerText = config.items[config.currentIdx];
+            document.getElementById('ui-progress').innerText = `Item ${config.currentIdx + 1} of ${config.items.length}`;
+            document.getElementById('rec-btn').innerText = "Start Recording";
+            document.getElementById('rec-btn').style.background = "#00b08b";
+        } else {
+            document.getElementById('ui-word').innerText = "All Done!";
+            document.getElementById('rec-btn').innerText = "Save to Google Drive";
+            document.getElementById('rec-btn').style.background = "#ff7e79";
+        }
+    }
+
+    async function handleRecord() {
+        if(config.currentIdx >= config.items.length) { uploadFiles(); return; }
+        if(!isRecording) {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                audioChunks = [];
+                mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(audioChunks, { type: 'audio/wav' });
+                    sessionData.push({ blob: blob, task: config.items[config.currentIdx] });
+                    config.currentIdx++;
+                    updateUI();
+                };
+                mediaRecorder.start();
+                isRecording = true;
+                document.getElementById('rec-btn').innerText = "Stop Recording";
+            } catch (e) { alert("Mic blocked! Please check iPad settings."); }
+        } else {
+            mediaRecorder.stop();
+            isRecording = false;
+        }
+    }
+
+    async function uploadFiles() {
+        const btn = document.getElementById('rec-btn');
+        btn.disabled = true;
+        btn.innerText = "Sending... 🚀";
+        for (let item of sessionData) {
+            const reader = new FileReader();
+            reader.readAsDataURL(item.blob);
+            await new Promise(res => {
+                reader.onloadend = async () => {
+                    const base64 = reader.result.split(',')[1];
+                    try {
+                        await fetch(SCRIPT_URL, {
+                            method: "POST",
+                            mode: 'no-cors',
+                            body: JSON.stringify({ audio: base64, name: config.student, task: item.task, folderUrl: config.drive })
+                        });
+                    } catch (e) {}
+                    res();
+                };
+            });
+        }
+        alert("Saved! Great job, " + config.student + "!");
+        location.reload();
+    }
+</script>
+</body>
+</html>
