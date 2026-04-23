@@ -1,2 +1,2 @@
-# Singuang-studio
+# Recording-studio
 Students' recording
